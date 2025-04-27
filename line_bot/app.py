@@ -10,10 +10,6 @@ from linebot.models import (
     ButtonComponent, TextComponent, DatetimePickerAction
 )
 from dotenv import load_dotenv
-import translation_manager
-import conversation_manager
-import calendar_manager
-import reporting_manager
 
 # Carregar variáveis de ambiente
 load_dotenv()
@@ -31,6 +27,68 @@ CLINIC_NAME = os.environ.get('CLINIC_NAME', 'Clínica Tanaka')
 CLINIC_ADDRESS = os.environ.get('CLINIC_ADDRESS', 'Tóquio, Japão')
 CLINIC_PHONE = os.environ.get('CLINIC_PHONE', '+81-XX-XXXX-XXXX')
 CLINIC_EMAIL = os.environ.get('CLINIC_EMAIL', 'contato@clinicatanaka.com')
+
+# Simulação de banco de dados de usuários (em produção, use Supabase ou outro banco)
+user_data = {}
+
+# Simulação de horários disponíveis (em produção, use calendar_manager)
+available_slots = {
+    "27/04/2025": ["09:00", "10:00", "11:00", "14:00", "15:00"],
+    "28/04/2025": ["09:30", "10:30", "14:30", "15:30", "16:30"],
+    "29/04/2025": ["08:00", "09:00", "10:00", "11:00", "13:00", "14:00"],
+    "30/04/2025": ["10:00", "11:00", "15:00", "16:00", "17:00"]
+}
+
+# Funções simplificadas dos módulos
+def detect_language(text):
+    # Simulação simples de detecção de idioma
+    if any(word in text.lower() for word in ['olá', 'ola', 'bom dia', 'boa tarde', 'brasil']):
+        return 'pt'
+    elif any(word in text.lower() for word in ['こんにちは', 'おはよう', '予約', '日本']):
+        return 'ja'
+    else:
+        return 'en'  # Default para inglês
+
+def set_user_language(user_id, language):
+    if user_id not in user_data:
+        user_data[user_id] = {}
+    user_data[user_id]['language'] = language
+
+def get_user_language(user_id):
+    if user_id in user_data and 'language' in user_data[user_id]:
+        return user_data[user_id]['language']
+    return 'en'  # Default para inglês
+
+def get_available_slots():
+    return available_slots
+
+def create_appointment(user_id, date, time):
+    # Simulação de criação de agendamento
+    appointment_id = f"APT-{user_id[:6]}-{date.replace('/', '')}-{time.replace(':', '')}"
+    if user_id not in user_data:
+        user_data[user_id] = {}
+    if 'appointments' not in user_data[user_id]:
+        user_data[user_id]['appointments'] = []
+    
+    user_data[user_id]['appointments'].append({
+        'id': appointment_id,
+        'date': date,
+        'time': time
+    })
+    
+    return appointment_id
+
+def process_message(user_id, message, language):
+    # Processamento simples de mensagem baseado no idioma
+    if language == 'pt':
+        return f"Olá! Como posso ajudar você hoje na {CLINIC_NAME}?"
+    elif language == 'ja':
+        return f"こんにちは！{CLINIC_NAME}でどのようにお手伝いできますか？"
+    elif language == 'en':
+        return f"Hello! How can I help you today at {CLINIC_NAME}?"
+    else:
+        # Para outros idiomas, tentamos responder em inglês
+        return f"Hello! How can I help you today at {CLINIC_NAME}?"
 
 @app.route("/webhook", methods=['POST'])
 def callback():
@@ -64,9 +122,10 @@ def handle_message(event):
             # Criar botões de resposta rápida para seleção de idioma
             language_quick_reply = QuickReply(
                 items=[
-                    QuickReplyButton(action=MessageAction(label="Português", text="Português")),
-                    QuickReplyButton(action=MessageAction(label="日本語", text="日本語")),
-                    QuickReplyButton(action=MessageAction(label="English", text="English"))
+                    QuickReplyButton(action=MessageAction(label="🇧🇷 Português", text="Português")),
+                    QuickReplyButton(action=MessageAction(label="🇯🇵 日本語", text="日本語")),
+                    QuickReplyButton(action=MessageAction(label="🇺🇸 English", text="English")),
+                    QuickReplyButton(action=MessageAction(label="🌐 Others", text="Other Language"))
                 ]
             )
             
@@ -74,8 +133,45 @@ def handle_message(event):
             line_bot_api.reply_message(
                 event.reply_token,
                 TextSendMessage(
-                    text="Por favor, selecione seu idioma / 言語を選択してください / Please select your language",
+                    text="Por favor, selecione seu idioma / 言語を選択してください / Please select your language / 🌐 Select your language",
                     quick_reply=language_quick_reply
+                )
+            )
+            return
+        
+        # Verificar se o usuário está solicitando outro idioma
+        if user_message == "Other Language":
+            line_bot_api.reply_message(
+                event.reply_token,
+                TextSendMessage(text="Please type the name of your language (e.g., Español, Français, Deutsch, etc.)")
+            )
+            return
+        
+        # Verificar se o usuário está informando um idioma personalizado
+        if user_id in user_data and user_data.get(user_id, {}).get('awaiting_language', False):
+            # Armazenar o idioma personalizado
+            set_user_language(user_id, 'other')
+            user_data[user_id]['custom_language'] = user_message
+            user_data[user_id]['awaiting_language'] = False
+            
+            # Enviar mensagem de boas-vindas em inglês (padrão para idiomas não suportados)
+            welcome_message = f"Welcome to {CLINIC_NAME}! We'll try to assist you in English. How can we help you today?"
+            
+            # Criar botões de resposta rápida para opções iniciais
+            options_quick_reply = QuickReply(
+                items=[
+                    QuickReplyButton(action=MessageAction(label="📅 Book appointment", text="Book appointment")),
+                    QuickReplyButton(action=MessageAction(label="ℹ️ Clinic information", text="Clinic information")),
+                    QuickReplyButton(action=MessageAction(label="👨‍⚕️ Talk to staff", text="Talk to staff"))
+                ]
+            )
+            
+            # Enviar mensagem de boas-vindas com opções
+            line_bot_api.reply_message(
+                event.reply_token,
+                TextSendMessage(
+                    text=welcome_message,
+                    quick_reply=options_quick_reply
                 )
             )
             return
@@ -91,7 +187,7 @@ def handle_message(event):
             selected_language = language_map[user_message]
             
             # Salvar a preferência de idioma do usuário
-            conversation_manager.set_user_language(user_id, selected_language)
+            set_user_language(user_id, selected_language)
             
             # Obter a mensagem de boas-vindas no idioma selecionado
             welcome_messages = {
@@ -101,7 +197,13 @@ def handle_message(event):
             }
             
             # Criar botões de resposta rápida para opções iniciais
-            options_messages = {
+            options_labels = {
+                'pt': ["📅 Agendar consulta", "ℹ️ Informações da clínica", "👨‍⚕️ Falar com atendente"],
+                'ja': ["📅 予約を取る", "ℹ️ クリニック情報", "👨‍⚕️ スタッフと話す"],
+                'en': ["📅 Book appointment", "ℹ️ Clinic information", "👨‍⚕️ Talk to staff"]
+            }
+            
+            options_values = {
                 'pt': ["Agendar consulta", "Informações da clínica", "Falar com atendente"],
                 'ja': ["予約を取る", "クリニック情報", "スタッフと話す"],
                 'en': ["Book appointment", "Clinic information", "Talk to staff"]
@@ -109,9 +211,9 @@ def handle_message(event):
             
             options_quick_reply = QuickReply(
                 items=[
-                    QuickReplyButton(action=MessageAction(label=options_messages[selected_language][0], text=options_messages[selected_language][0])),
-                    QuickReplyButton(action=MessageAction(label=options_messages[selected_language][1], text=options_messages[selected_language][1])),
-                    QuickReplyButton(action=MessageAction(label=options_messages[selected_language][2], text=options_messages[selected_language][2]))
+                    QuickReplyButton(action=MessageAction(label=options_labels[selected_language][0], text=options_values[selected_language][0])),
+                    QuickReplyButton(action=MessageAction(label=options_labels[selected_language][1], text=options_values[selected_language][1])),
+                    QuickReplyButton(action=MessageAction(label=options_labels[selected_language][2], text=options_values[selected_language][2]))
                 ]
             )
             
@@ -125,8 +227,11 @@ def handle_message(event):
             )
             return
         
-        # Para outras mensagens, detectar idioma e processar normalmente
-        detected_language = translation_manager.detect_language(user_message)
+        # Para outras mensagens, detectar idioma
+        detected_language = get_user_language(user_id)
+        if not detected_language:
+            detected_language = detect_language(user_message)
+            set_user_language(user_id, detected_language)
         
         # Verificar se o usuário quer agendar uma consulta
         appointment_keywords = {
@@ -136,11 +241,21 @@ def handle_message(event):
         }
         
         # Verificar se a mensagem contém palavras-chave de agendamento
-        is_appointment_request = any(keyword in user_message.lower() for keyword in appointment_keywords.get(detected_language, []))
+        is_appointment_request = False
+        for lang, keywords in appointment_keywords.items():
+            if any(keyword in user_message.lower() for keyword in keywords):
+                is_appointment_request = True
+                break
         
-        if is_appointment_request or user_message in ["Agendar consulta", "予約を取る", "Book appointment"]:
+        appointment_messages = {
+            'pt': ["Agendar consulta", "agendar consulta"],
+            'ja': ["予約を取る", "予約"],
+            'en': ["Book appointment", "book appointment"]
+        }
+        
+        if is_appointment_request or any(msg in user_message for msg in appointment_messages.get(detected_language, [])):
             # Obter horários disponíveis
-            available_slots = calendar_manager.get_available_slots()
+            slots = get_available_slots()
             
             # Mensagens para diferentes idiomas
             date_selection_messages = {
@@ -151,9 +266,9 @@ def handle_message(event):
             
             # Criar botões de resposta rápida para datas disponíveis
             date_buttons = []
-            for date in available_slots.keys():
+            for date in slots.keys():
                 date_buttons.append(
-                    QuickReplyButton(action=MessageAction(label=date, text=f"Data: {date}"))
+                    QuickReplyButton(action=MessageAction(label=f"📆 {date}", text=f"Data: {date}"))
                 )
             
             date_quick_reply = QuickReply(items=date_buttons[:13])  # Limite de 13 botões
@@ -173,9 +288,9 @@ def handle_message(event):
             selected_date = user_message.replace("Data: ", "")
             
             # Obter horários disponíveis para a data selecionada
-            available_slots = calendar_manager.get_available_slots()
-            if selected_date in available_slots:
-                available_times = available_slots[selected_date]
+            slots = get_available_slots()
+            if selected_date in slots:
+                available_times = slots[selected_date]
                 
                 # Mensagens para diferentes idiomas
                 time_selection_messages = {
@@ -188,7 +303,7 @@ def handle_message(event):
                 time_buttons = []
                 for time in available_times:
                     time_buttons.append(
-                        QuickReplyButton(action=MessageAction(label=time, text=f"Horário: {time} - {selected_date}"))
+                        QuickReplyButton(action=MessageAction(label=f"🕒 {time}", text=f"Horário: {time} - {selected_date}"))
                     )
                 
                 time_quick_reply = QuickReply(items=time_buttons[:13])  # Limite de 13 botões
@@ -212,29 +327,135 @@ def handle_message(event):
                 selected_date = parts[1]
                 
                 # Salvar o agendamento
-                appointment_id = calendar_manager.create_appointment(user_id, selected_date, selected_time)
+                appointment_id = create_appointment(user_id, selected_date, selected_time)
                 
                 # Mensagens de confirmação para diferentes idiomas
                 confirmation_messages = {
-                    'pt': f"Sua consulta foi agendada com sucesso para {selected_date} às {selected_time}. ID do agendamento: {appointment_id}",
-                    'ja': f"予約は{selected_date}の{selected_time}に正常に予約されました。予約ID：{appointment_id}",
-                    'en': f"Your appointment has been successfully scheduled for {selected_date} at {selected_time}. Appointment ID: {appointment_id}"
+                    'pt': f"✅ Sua consulta foi agendada com sucesso para {selected_date} às {selected_time}.\n\nID do agendamento: {appointment_id}\n\nDeseja fazer mais alguma coisa?",
+                    'ja': f"✅ 予約は{selected_date}の{selected_time}に正常に予約されました。\n\n予約ID：{appointment_id}\n\n他に何かお手伝いできることはありますか？",
+                    'en': f"✅ Your appointment has been successfully scheduled for {selected_date} at {selected_time}.\n\nAppointment ID: {appointment_id}\n\nIs there anything else you would like to do?"
                 }
                 
-                # Enviar mensagem de confirmação
+                # Opções após confirmação
+                options_labels = {
+                    'pt': ["📋 Ver minhas consultas", "📅 Agendar outra consulta", "❌ Cancelar consulta"],
+                    'ja': ["📋 予約を見る", "📅 別の予約を取る", "❌ 予約をキャンセルする"],
+                    'en': ["📋 View my appointments", "📅 Book another appointment", "❌ Cancel appointment"]
+                }
+                
+                options_values = {
+                    'pt': ["Ver minhas consultas", "Agendar outra consulta", "Cancelar consulta"],
+                    'ja': ["予約を見る", "別の予約を取る", "予約をキャンセルする"],
+                    'en': ["View my appointments", "Book another appointment", "Cancel appointment"]
+                }
+                
+                options_quick_reply = QuickReply(
+                    items=[
+                        QuickReplyButton(action=MessageAction(label=options_labels[detected_language][0], text=options_values[detected_language][0])),
+                        QuickReplyButton(action=MessageAction(label=options_labels[detected_language][1], text=options_values[detected_language][1])),
+                        QuickReplyButton(action=MessageAction(label=options_labels[detected_language][2], text=options_values[detected_language][2]))
+                    ]
+                )
+                
+                # Enviar mensagem de confirmação com opções
                 line_bot_api.reply_message(
                     event.reply_token,
-                    TextSendMessage(text=confirmation_messages.get(detected_language, confirmation_messages['en']))
+                    TextSendMessage(
+                        text=confirmation_messages.get(detected_language, confirmation_messages['en']),
+                        quick_reply=options_quick_reply
+                    )
                 )
                 return
         
-        # Para outras mensagens, processar normalmente
-        response = conversation_manager.process_message(user_id, user_message, detected_language)
+        # Verificar se o usuário quer informações da clínica
+        info_keywords = {
+            'pt': ['informações', 'informação', 'clínica', 'endereço', 'telefone', 'email'],
+            'ja': ['情報', 'クリニック', '住所', '電話', 'メール'],
+            'en': ['information', 'info', 'clinic', 'address', 'phone', 'email']
+        }
         
-        # Enviar resposta ao usuário
+        info_messages = {
+            'pt': ["Informações da clínica", "informações"],
+            'ja': ["クリニック情報", "情報"],
+            'en': ["Clinic information", "information"]
+        }
+        
+        is_info_request = False
+        for lang, keywords in info_keywords.items():
+            if any(keyword in user_message.lower() for keyword in keywords):
+                is_info_request = True
+                break
+        
+        if is_info_request or any(msg in user_message for msg in info_messages.get(detected_language, [])):
+            # Mensagens de informação para diferentes idiomas
+            info_messages = {
+                'pt': f"📍 **{CLINIC_NAME}**\n\n📍 Endereço: {CLINIC_ADDRESS}\n📞 Telefone: {CLINIC_PHONE}\n📧 Email: {CLINIC_EMAIL}\n\n⏰ Horário de funcionamento:\nSegunda a Sexta: 9:00 - 18:00\nSábado: 9:00 - 13:00\nDomingo: Fechado",
+                'ja': f"📍 **{CLINIC_NAME}**\n\n📍 住所: {CLINIC_ADDRESS}\n📞 電話: {CLINIC_PHONE}\n📧 メール: {CLINIC_EMAIL}\n\n⏰ 営業時間:\n月曜日～金曜日: 9:00 - 18:00\n土曜日: 9:00 - 13:00\n日曜日: 休診",
+                'en': f"📍 **{CLINIC_NAME}**\n\n📍 Address: {CLINIC_ADDRESS}\n📞 Phone: {CLINIC_PHONE}\n📧 Email: {CLINIC_EMAIL}\n\n⏰ Opening Hours:\nMonday to Friday: 9:00 - 18:00\nSaturday: 9:00 - 13:00\nSunday: Closed"
+            }
+            
+            # Opções após informações
+            options_labels = {
+                'pt': ["📅 Agendar consulta", "🗺️ Ver mapa", "📞 Ligar para clínica"],
+                'ja': ["📅 予約を取る", "🗺️ 地図を見る", "📞 クリニックに電話する"],
+                'en': ["📅 Book appointment", "🗺️ View map", "📞 Call clinic"]
+            }
+            
+            options_values = {
+                'pt': ["Agendar consulta", "Ver mapa", "Ligar para clínica"],
+                'ja': ["予約を取る", "地図を見る", "クリニックに電話する"],
+                'en': ["Book appointment", "View map", "Call clinic"]
+            }
+            
+            options_quick_reply = QuickReply(
+                items=[
+                    QuickReplyButton(action=MessageAction(label=options_labels[detected_language][0], text=options_values[detected_language][0])),
+                    QuickReplyButton(action=MessageAction(label=options_labels[detected_language][1], text=options_values[detected_language][1])),
+                    QuickReplyButton(action=MessageAction(label=options_labels[detected_language][2], text=options_values[detected_language][2]))
+                ]
+            )
+            
+            # Enviar mensagem de informação com opções
+            line_bot_api.reply_message(
+                event.reply_token,
+                TextSendMessage(
+                    text=info_messages.get(detected_language, info_messages['en']),
+                    quick_reply=options_quick_reply
+                )
+            )
+            return
+        
+        # Para outras mensagens, processar normalmente
+        response = process_message(user_id, user_message, detected_language)
+        
+        # Criar botões de resposta rápida para opções gerais
+        options_labels = {
+            'pt': ["📅 Agendar consulta", "ℹ️ Informações da clínica", "👨‍⚕️ Falar com atendente"],
+            'ja': ["📅 予約を取る", "ℹ️ クリニック情報", "👨‍⚕️ スタッフと話す"],
+            'en': ["📅 Book appointment", "ℹ️ Clinic information", "👨‍⚕️ Talk to staff"]
+        }
+        
+        options_values = {
+            'pt': ["Agendar consulta", "Informações da clínica", "Falar com atendente"],
+            'ja': ["予約を取る", "クリニック情報", "スタッフと話す"],
+            'en': ["Book appointment", "Clinic information", "Talk to staff"]
+        }
+        
+        options_quick_reply = QuickReply(
+            items=[
+                QuickReplyButton(action=MessageAction(label=options_labels.get(detected_language, options_labels['en'])[0], text=options_values.get(detected_language, options_values['en'])[0])),
+                QuickReplyButton(action=MessageAction(label=options_labels.get(detected_language, options_labels['en'])[1], text=options_values.get(detected_language, options_values['en'])[1])),
+                QuickReplyButton(action=MessageAction(label=options_labels.get(detected_language, options_labels['en'])[2], text=options_values.get(detected_language, options_values['en'])[2]))
+            ]
+        )
+        
+        # Enviar resposta ao usuário com opções
         line_bot_api.reply_message(
             event.reply_token,
-            TextSendMessage(text=response)
+            TextSendMessage(
+                text=response,
+                quick_reply=options_quick_reply
+            )
         )
     except Exception as e:
         app.logger.error(f"Error in handle_message: {str(e)}")
