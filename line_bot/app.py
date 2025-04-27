@@ -133,7 +133,7 @@ def handle_message(event):
             line_bot_api.reply_message(
                 event.reply_token,
                 TextSendMessage(
-                    text="Por favor, selecione seu idioma / 言語を選択してください / Please select your language / 🌐 Select your language",
+                    text="Por favor, selecione seu idioma / 言語を選択してください / Please select your language",
                     quick_reply=language_quick_reply
                 )
             )
@@ -319,7 +319,7 @@ def handle_message(event):
                 return
         
         # Verificar se o usuário está selecionando um horário
-        if user_message.startswith("Horário: "):
+        if "Horário:" in user_message and " - " in user_message:
             # Extrair horário e data
             parts = user_message.replace("Horário: ", "").split(" - ")
             if len(parts) == 2:
