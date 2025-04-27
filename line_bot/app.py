@@ -1,3 +1,21 @@
+import os
+import json
+from flask import Flask, request, abort
+from linebot import LineBotApi, WebhookHandler
+from linebot.exceptions import InvalidSignatureError
+from linebot.models import MessageEvent, TextMessage, TextSendMessage
+from dotenv import load_dotenv
+
+# Carregar variáveis de ambiente
+load_dotenv() 
+
+# Criar a aplicação Flask
+app = Flask(__name__)
+
+# Configuração da API do LINE
+line_bot_api = LineBotApi(os.environ.get('LINE_CHANNEL_ACCESS_TOKEN'))
+handler = WebhookHandler(os.environ.get('LINE_CHANNEL_SECRET'))
+
 @app.route("/webhook", methods=['POST'])
 def callback():
     # Obter a assinatura do cabeçalho X-Line-Signature
@@ -28,3 +46,11 @@ def handle_message(event):
         )
     except Exception as e:
         app.logger.error(f"Error sending response: {str(e)}")
+
+@app.route("/", methods=['GET'])
+def health_check():
+    return 'Chatbot LINE para Clínica Tanaka está funcionando!'
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
